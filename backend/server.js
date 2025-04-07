@@ -3,27 +3,69 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const dotenv = require('dotenv');
+const fs = require('fs');
 const Saree = require('./models/Saree');
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 
-// Middleware
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+console.log('Uploads directory:', uploadsDir);
+
+// CORS configuration
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Serve static files from the uploads directory
+app.use('/uploads', (req, res, next) => {
+    // Log the request
+    console.log('Accessing file:', req.url);
+    const filePath = path.join(uploadsDir, req.url);
+    console.log('Full path:', filePath);
+    
+    // Check if file exists
+    if (fs.existsSync(filePath)) {
+        console.log('File exists, serving:', filePath);
+        res.sendFile(filePath);
+    } else {
+        console.log('File not found:', filePath);
+        res.status(404).send('File not found');
+    }
+});
 
 // MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/punarvasthra', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('MongoDB connected'))
     .catch(err => console.log(err));
+
+// Test route to check MongoDB connection
+app.get('/api/test', async (req, res) => {
+    try {
+        const count = await Saree.countDocuments();
+        res.json({ 
+            message: 'MongoDB is connected',
+            sareeCount: count,
+            mongodbUri: process.env.MONGO_URI.replace(/:[^:]*@/, ':****@')
+        });
+    } catch (err) {
+        res.status(500).json({ 
+            message: 'Error connecting to MongoDB',
+            error: err.message
+        });
+    }
+});
 
 // Multer Setup for File Upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
